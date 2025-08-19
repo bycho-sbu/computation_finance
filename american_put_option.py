@@ -2,6 +2,7 @@ import os
 import math
 import numpy as np
 
+# lec 6 risk neutral valuation: binomial model
 def price_american_put_options(input_text: str | bytes) -> None:
     """
     Processes American put option parameters from a multi-line string or from a text file containing such data.
@@ -50,6 +51,7 @@ def price_american_put_options(input_text: str | bytes) -> None:
             raise ValueError(f"line {lineno}: expected 6 values per line but got {len(parts)} in line: {ln!r}")
 
         # parse values
+        # risk_free_rate, time in years, number of steps, volatility, initial price, and strike price 
         r, T, N, sigma, S0, K = parts
         price = value_of_american_put_option(
             float(r), float(T), int(float(N)), float(sigma), float(S0), float(K)
@@ -84,6 +86,7 @@ def value_of_american_put_option(risk_free_rate: float, time: float, num_steps: 
         return 0.0
 
     # delta t = T / N
+    # dividing the whole period of the option into N steps
     dt = time / float(num_steps)
 
     # handle near-zero volatility: avoid u≈d numerical issues
@@ -98,9 +101,10 @@ def value_of_american_put_option(risk_free_rate: float, time: float, num_steps: 
         discounted_eur_like = max(strike_price - expected_terminal, 0.0) * math.exp(-risk_free_rate * time)
         return max(intrinsic_now, discounted_eur_like)
 
-    # u = e^(volatility * sqrt(dt))
+    # u = e^(sigma * sqrt(dt)) for up factor
     u = math.exp(volatility * math.sqrt(dt))
-    # d = 1 / u
+
+    # d = 1 / u for down factor
     d = 1.0 / u
     # discount factor = e^(-r * delta t)
     disc = math.exp(-risk_free_rate * dt)
@@ -108,18 +112,20 @@ def value_of_american_put_option(risk_free_rate: float, time: float, num_steps: 
     # denom = (u - d) for p formula
     denom = (u - d)
     if abs(denom) < 1e-18:
-        # fallback if u≈d numerically
+        # fallback if u is d numerically
         expected_terminal = initial_price * math.exp(risk_free_rate * time)
         intrinsic_now = max(strike_price - initial_price, 0.0)
         discounted_eur_like = max(strike_price - expected_terminal, 0.0) * math.exp(-risk_free_rate * time)
         return max(intrinsic_now, discounted_eur_like)
 
+    # risk-neutral probability
     # p = ( e^(r * delta t) - d ) / ( u - d )
     p = (math.exp(risk_free_rate * dt) - d) / denom
     p = min(1.0, max(0.0, p))
     # q = 1 - p
     q = 1.0 - p
 
+    # value at expiration = max(K - S_T, 0)
     # terminal stock prices s_T(j) for j=0..N
     j = np.arange(num_steps + 1)
     sT = initial_price * (u ** j) * (d ** (num_steps - j))
@@ -141,5 +147,6 @@ def value_of_american_put_option(risk_free_rate: float, time: float, num_steps: 
     return float(values[0])
 
 if __name__ == "__main__":
-    file_path = "D:\\Grad\\gradPrep\\workspace\\sample_data\\price.tsv"
+    file_path = "D:\\Grad\\gradPrep\\workspace\\sample_data\\price_american_put.tsv"
     price_american_put_options(file_path)
+    # if option value < intrinsic value(K-S_T), exercise the option
