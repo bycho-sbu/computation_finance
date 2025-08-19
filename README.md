@@ -7,7 +7,7 @@ It explores the application of programming, statistics, and numerical methods to
 - **Option Pricing Models** – implementations such as Monte Carlo simulations for Asian call options.  
 - **Time Series Analysis** – AR/MA/ARIMA models for financial data forecasting.  
 - **Data Handling** – scripts for splitting, processing, and analyzing time series datasets.  
-- **Miscellaneous** – supporting utilities and experiments for financial computations.
+
 
 ## Tools
 - Python 3.10+
