@@ -129,16 +129,18 @@ def value_of_american_put_option(risk_free_rate: float, time: float, num_steps: 
     # terminal stock prices s_T(j) for j=0..N
     j = np.arange(num_steps + 1)
     sT = initial_price * (u ** j) * (d ** (num_steps - j))
+    # start of binomial tree
     values = np.maximum(strike_price - sT, 0.0)  # terminal put payoffs
 
     # backward induction with early exercise
     for step in range(num_steps - 1, -1, -1):
-        # continuation (expected discounted)
+        # Nth step parents value of left and right child 
         values = disc * (p * values[1:] + q * values[:-1])
 
         # underlying at this step for nodes j=0..step
         j = np.arange(step + 1)
         s_node = initial_price * (u ** j) * (d ** (step - j))
+        # if exit at this time 
         exercise = np.maximum(strike_price - s_node, 0.0)
 
         # american max
