@@ -125,7 +125,7 @@ def value_of_american_put_option(risk_free_rate: float, time: float, num_steps: 
     # q = 1 - p
     q = 1.0 - p
 
-    # value at expiration = max(K - S_T, 0)
+    # value at expiration for put = max(K - S_T, 0)
     # terminal stock prices s_T(j) for j=0..N
     j = np.arange(num_steps + 1)
     sT = initial_price * (u ** j) * (d ** (num_steps - j))
@@ -148,7 +148,149 @@ def value_of_american_put_option(risk_free_rate: float, time: float, num_steps: 
 
     return float(values[0])
 
+import os
+import math
+import numpy as np
+
+# lec 6 risk neutral valuation: binomial model
+def price_american_call_options(input_text: str | bytes) -> None:
+    """
+    Processes American call option parameters from a multi-line string or from a text file containing such data. 
+    """
+
+    # read file or str
+    if isinstance(input_text, bytes):
+        try:
+            text = input_text.decode("utf-8")
+        except Exception:
+            text = input_text.decode("latin-1")
+    else:
+        text = input_text
+
+    # if a file path is given, load the file content
+    if isinstance(text, str) and os.path.exists(text):
+        # reject json because it's not a valid format for this function
+        _, ext = os.path.splitext(text)
+        if ext.lower() == ".json":
+            raise ValueError(
+                f"got a JSON file ({text}); expected a TXT/CSV/TSV file with six numeric fields per line: r, T, N, sigma, S0, K"
+            )
+        with open(text, "r", encoding="utf-8") as f:
+            text = f.read()
+
+    # reading csv or str from files 
+    lines = [ln.strip() for ln in str(text).splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    for lineno, ln in enumerate(lines, start=1):
+        # tab and comma handling
+        if "\t" in ln:
+            parts = ln.split("\t")
+        else:
+            parts = ln.split(",")
+        if len(parts) != 6:
+            raise ValueError(f"line {lineno}: expected 6 values per line but got {len(parts)} in line: {ln!r}")
+
+        # parse values
+        # risk_free_rate, time in years, number of steps, volatility, initial price, and strike price 
+        r, T, N, sigma, S0, K = parts
+        price = value_of_american_call_option(
+            float(r), float(T), int(float(N)), float(sigma), float(S0), float(K)
+        )
+        # print one result per line
+        print(f"{price:.6f}")
+
+def value_of_american_call_option(risk_free_rate: float, time: float, num_steps: int, volatility: float,
+                                 initial_price: float, strike_price: float) -> float:
+    """
+    Calculates the value of an American call option using the Binomial Tree model.
+
+    Parameters:
+    - risk_free_rate (float): The risk-free interest rate (annualized).
+    - time (float): Time to expiration of the option (in years).
+    - num_steps (int): Number of steps in the binomial model.
+    - volatility (float): Annual volatility of the underlying asset.
+    - initial_price (float): The initial stock price.
+    - strike_price (float): The strike price of the option.
+
+    Returns:
+    - float: The estimated value of the American call option.
+
+    notes:
+    - uses risk-neutral probability p = (e^{r dt} - d) / (u - d), with u = e^{sigma sqrt(dt)}, d = 1/u.
+    - handles degenerate cases (e.g., sigma ≈ 0 or dt ≈ 0) by falling back to intrinsic/discounted payoff logic.
+    """
+    # basic guards
+    if time <= 0 or num_steps <= 0:
+        return max(strike_price - initial_price, 0.0)
+    if initial_price <= 0 or strike_price <= 0:
+        return 0.0
+
+    # delta t = T / N
+    # dividing the whole period of the option into N steps
+    dt = time / float(num_steps)
+
+    # handle near-zero volatility: avoid u≈d numerical issues
+    if volatility <= 1e-12:
+        # risk-neutral drift path; american feature => 
+        # compare immediate exercise vs discounted terminal payoff
+
+        # expected terminal = S0 * e^(r * T)
+        expected_terminal = initial_price * math.exp(risk_free_rate * time)
+        intrinsic_now = max(strike_price - initial_price, 0.0)
+        # discounted_eur_like = e^(-r * T) * max(K - expected_terminal, 0)
+        discounted_eur_like = max(strike_price - expected_terminal, 0.0) * math.exp(-risk_free_rate * time)
+        return max(intrinsic_now, discounted_eur_like)
+
+    # u = e^(sigma * sqrt(dt)) for up factor
+    u = math.exp(volatility * math.sqrt(dt))
+
+    # d = 1 / u for down factor
+    d = 1.0 / u
+    # discount factor = e^(-r * delta t)
+    disc = math.exp(-risk_free_rate * dt)
+
+    # denom = (u - d) for p formula
+    denom = (u - d)
+    if abs(denom) < 1e-18:
+        # fallback if u is d numerically
+        expected_terminal = initial_price * math.exp(risk_free_rate * time)
+        intrinsic_now = max(initial_price - strike_price, 0.0)
+        discounted_eur_like = max(expected_terminal - strike_price, 0.0) * math.exp(-risk_free_rate * time)
+        return max(intrinsic_now, discounted_eur_like)
+
+    # risk-neutral probability
+    # p = ( e^(r * delta t) - d ) / ( u - d )
+    p = (math.exp(risk_free_rate * dt) - d) / denom
+    p = min(1.0, max(0.0, p))
+    # q = 1 - p
+    q = 1.0 - p
+
+    # value at expiration for call = max(S_T - K, 0)
+    # terminal stock prices s_T(j) for j=0..N
+    j = np.arange(num_steps + 1)
+    sT = initial_price * (u ** j) * (d ** (num_steps - j))
+    # start of binomial tree (intrinsic values)
+    values = np.maximum(sT - strike_price, 0.0)  # terminal call payoffs
+
+    # backward induction with early exercise
+    for step in range(num_steps - 1, -1, -1):
+        # Nth step parents value of left and right child 
+        values = disc * (p * values[1:] + q * values[:-1])
+
+        # underlying at this step for nodes j=0..step
+        j = np.arange(step + 1)
+        s_node = initial_price * (u ** j) * (d ** (step - j))
+        # if exit at this time
+        exercise = np.maximum(s_node - strike_price, 0.0)  # max(sT - K) call
+
+        # american max
+        values = np.maximum(values, exercise)
+
+    return float(values[0])
+
 if __name__ == "__main__":
     file_path = "D:\\Grad\\gradPrep\\workspace\\sample_data\\price_american_put.tsv"
+    print("American Put Option Prices:")  # if option value < intrinsic value(K-S_T), exercise the option
     price_american_put_options(file_path)
-    # if option value < intrinsic value(K-S_T), exercise the option
+    print("American Call Option Prices:")  # if option value < intrinsic value(S_T-K), exercise the option
+    price_american_call_options(file_path)
+   
